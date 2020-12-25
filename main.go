@@ -1,15 +1,13 @@
 package main
 
 import (
-	"encoding/json"
-	"fmt"
 	"github.com/docopt/docopt-go"
 	"golang.org/x/crypto/ssh"
 	"gopkg.in/src-d/go-billy.v4/memfs"
 	"gopkg.in/src-d/go-git.v4"
 	"gopkg.in/src-d/go-git.v4/config"
 	"gopkg.in/src-d/go-git.v4/plumbing"
-	go_git_ssh "gopkg.in/src-d/go-git.v4/plumbing/transport/ssh"
+	gitssh "gopkg.in/src-d/go-git.v4/plumbing/transport/ssh"
 	"gopkg.in/src-d/go-git.v4/storage/memory"
 	"io/ioutil"
 	"log"
@@ -17,13 +15,6 @@ import (
 	"path"
 	"regexp"
 )
-
-type DockerfileFromReferences struct {
-	Url        string
-	Branch     string
-	Path       string
-	References []string
-}
 
 func FindDockerfiles(wt *git.Worktree, filename string) ([]string, error) {
 	result := make([]string, 0)
@@ -62,19 +53,11 @@ var (
 	fromRegExpNames = fromRegExp.SubexpNames()
 )
 
-func ReadFromStatements(wt *git.Worktree, filename string) ([]string, error) {
+func ExtractFromStatements(content []byte) []string {
 	result := make([]string, 0)
 	aliases := make(map[string]string, 0)
 	references := make(map[string]bool, 0)
 
-	file, err := wt.Filesystem.Open(filename)
-	if err != nil {
-		return nil, err
-	}
-	content, err := ioutil.ReadAll(file)
-	if err != nil {
-		return nil, err
-	}
 	matches := fromRegExp.FindAllSubmatch(content, -1)
 	if matches != nil {
 		for _, match := range matches {
@@ -104,24 +87,56 @@ func ReadFromStatements(wt *git.Worktree, filename string) ([]string, error) {
 			}
 		}
 	}
-	return result, nil
+	return result
+}
+
+func ReadFromStatements(wt *git.Worktree, filename string) ([]string, error) {
+	file, err := wt.Filesystem.Open(filename)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	content, err := ioutil.ReadAll(file)
+	if err != nil {
+		return nil, err
+	}
+	return ExtractFromStatements(content), nil
+}
+
+func DesiredBranch(reference *plumbing.Reference, branches []string) bool {
+	if !reference.Name().IsBranch() {
+		return false
+	}
+	for _, branch := range branches {
+		if branch == reference.Name().Short() || branch == reference.Name().String() {
+			return true
+		}
+	}
+	return len(branches) == 0
 }
 
 func main() {
 	usage := `fromage - list all container references in Dockerfiles in a git repository
 
 Usage:
-  fromage [--help] [--identity=KEYFILE] [--branch=BRANCH ...] [URL] ...
+  fromage list [--help] [--format=FORMAT] [--no-header] [--only-references] [--identity=KEYFILE] [--branch=BRANCH ...] URL
 
 Options:
---branch=BRANCH     to inspect, default is all.
+--branch=BRANCH     to inspect, defaults to all branches.
+--format=FORMAT     to print: text, json or yaml [default: text].
+
 --identity=KEYFILE  private key to authenticate with [default: $HOME/.ssh/id_rsa].
+
 `
 	var args struct {
-		Identity string
-		Branch []string
-		Url []string
-		Help bool
+		List           bool
+		Format         string
+		OnlyReferences bool
+		NoHeader       bool
+		Identity       string
+		Branch         []string
+		Url            string
+		Help           bool
 	}
 
 	if opts, err := docopt.ParseDoc(usage); err == nil {
@@ -134,7 +149,6 @@ Options:
 	} else {
 		log.Fatal(err)
 	}
-
 
 	keyFile := os.ExpandEnv(args.Identity)
 
@@ -150,62 +164,66 @@ Options:
 		os.Exit(1)
 	}
 
-	for _, url := range args.Url {
-		auth := &go_git_ssh.PublicKeys{User: "git", Signer: signer}
-		r, err := git.Clone(memory.NewStorage(), memfs.New(), &git.CloneOptions{
-			URL:  url,
-			Auth: auth,
-		})
-		if err != nil {
-			log.Fatal(err)
+	auth := &gitssh.PublicKeys{User: "git", Signer: signer}
+	r, err := git.Clone(memory.NewStorage(), memfs.New(), &git.CloneOptions{
+		URL:  args.Url,
+		Auth: auth,
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	err = r.Fetch(&git.FetchOptions{
+		RefSpecs: []config.RefSpec{"refs/*:refs/*", "HEAD:refs/heads/HEAD"},
+		Depth:    1,
+		Auth:     auth,
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	wt, err := r.Worktree()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	branches, err := r.Branches()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	var result DockerfileFromReferences = make(DockerfileFromReferences, 0)
+
+	err = branches.ForEach(func(ref *plumbing.Reference) error {
+		if !DesiredBranch(ref, args.Branch) {
+			return nil
 		}
 
-		err = r.Fetch(&git.FetchOptions{
-			RefSpecs: []config.RefSpec{"refs/*:refs/*", "HEAD:refs/heads/HEAD"},
-			Depth:    1,
-			Auth:     auth,
-		})
+		dockerfiles, err := FindDockerfiles(wt, "/")
 		if err != nil {
-			log.Fatal(err)
+			return err
 		}
-
-		wt, err := r.Worktree()
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		i, err := r.Branches()
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		err = i.ForEach(func(ref *plumbing.Reference) error {
-			if ref.Name().Short() == "HEAD" {
-				return nil
-			}
-
-			fmt.Printf("%s\n", ref.Name().String())
-			dockerfiles, err := FindDockerfiles(wt, "/")
+		for _, filename := range dockerfiles {
+			references, err := ReadFromStatements(wt, filename)
 			if err != nil {
 				return err
 			}
-			for _, filename := range dockerfiles {
-				references, err := ReadFromStatements(wt, filename)
-				if err != nil {
-					return err
-				}
-				froms := DockerfileFromReferences{
-					Url: url,
-					Branch:     ref.Name().Short(),
-					Path:       filename,
-					References: references,
-				}
-				encoder := json.NewEncoder(os.Stdout)
-				_ = encoder.Encode(froms)
-			}
+			for _, reference := range references {
 
-			return nil
-		},
-		)
+				froms := DockerfileFromReference{
+					Branch:    ref.Name().Short(),
+					Path:      filename,
+					Reference: reference,
+				}
+				result = append(result, &froms)
+			}
+		}
+		return nil
+	},
+	)
+	if args.OnlyReferences {
+		result.OutputOnlyReferences(args.Format, args.NoHeader)
+	} else {
+		result.Output(args.Format, args.NoHeader)
 	}
 }
