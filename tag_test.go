@@ -26,7 +26,7 @@ func TestMakeTag(t *testing.T) {
 }
 
 func TestListAllTags(t *testing.T) {
-	for _, ref := range []string{"php:7.2-fpm", "golang:1.12.0"} {
+	for _, ref := range []string{"php:7.2-fpm", "golang:1.12"} {
 		reference, _ := name.ParseReference(ref)
 		result, err := ListAllTags(reference)
 		if err != nil {

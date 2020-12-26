@@ -20,7 +20,7 @@ type Tag struct {
 type Tags []Tag
 
 var (
-	semVerRegExp      = regexp.MustCompile(`(?m)^(?P<prefix>[^0-9]*)(?P<major>[0-9]+)((\.(?P<minor>[0-9]+)?(\.(?P<patch>[0-9]+))?(?P<suffix>.*))|(?P<suffix2>\W.*))$`)
+	semVerRegExp      = regexp.MustCompile(`(?m)^(?P<prefix>[^0-9]*)(?P<major>[0-9]+)(\.(?P<minor>[0-9]+))?(\.(?P<patch>[0-9]+))?(?P<suffix>\W.*)?$`)
 	semVerRegExpNames = semVerRegExp.SubexpNames()
 )
 
@@ -36,10 +36,8 @@ func MakeTag(tag string) Tag {
 			switch name {
 			case "prefix":
 				result.Prefix = matches[i]
-			case "suffix", "suffix2":
-				if len(matches[i]) > 0 {
-					result.Suffix = matches[i]
-				}
+			case "suffix":
+				result.Suffix = matches[i]
 			case "major", "minor", "patch":
 				if len(matches[i]) > 0 {
 					level, _ := strconv.Atoi(matches[i])
