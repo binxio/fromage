@@ -2,13 +2,8 @@ package main
 
 import (
 	"github.com/docopt/docopt-go"
-	"golang.org/x/crypto/ssh"
-	"gopkg.in/src-d/go-billy.v4/memfs"
 	"gopkg.in/src-d/go-git.v4"
-	"gopkg.in/src-d/go-git.v4/config"
 	"gopkg.in/src-d/go-git.v4/plumbing"
-	gitssh "gopkg.in/src-d/go-git.v4/plumbing/transport/ssh"
-	"gopkg.in/src-d/go-git.v4/storage/memory"
 	"io/ioutil"
 	"log"
 	"os"
@@ -119,13 +114,13 @@ func main() {
 	usage := `fromage - list all container references in Dockerfiles in a git repository
 
 Usage:
-  fromage list [--help] [--format=FORMAT] [--no-header] [--only-references] [--identity=KEYFILE] [--branch=BRANCH ...] URL
+  fromage list [--help] [--format=FORMAT] [--no-header] [--only-references]  [--branch=BRANCH ...] URL
 
 Options:
 --branch=BRANCH     to inspect, defaults to all branches.
 --format=FORMAT     to print: text, json or yaml [default: text].
-
---identity=KEYFILE  private key to authenticate with [default: $HOME/.ssh/id_rsa].
+--no-header         do not print header if output type is text.
+--only-references   output only container image references.
 
 `
 	var args struct {
@@ -133,7 +128,6 @@ Options:
 		Format         string
 		OnlyReferences bool
 		NoHeader       bool
-		Identity       string
 		Branch         []string
 		Url            string
 		Help           bool
@@ -143,56 +137,28 @@ Options:
 		if err = opts.Bind(&args); err != nil {
 			log.Fatal(err)
 		}
-		if args.Identity == "" {
-			args.Identity = "$HOME/.ssh/id_rsa"
-		}
 	} else {
 		log.Fatal(err)
 	}
 
-	keyFile := os.ExpandEnv(args.Identity)
-
-	sshKey, err := ioutil.ReadFile(keyFile)
+	r, err := Clone(args.Url)
 	if err != nil {
-		log.Printf("failed to read key file '%s', %s", keyFile, err)
+		log.Printf("failed to clone repository %s, %s", args.Url, err)
 		os.Exit(1)
-	}
-
-	signer, err := ssh.ParsePrivateKey(sshKey)
-	if err != nil {
-		log.Printf("failed to read private key from '%s', %s", keyFile, err)
-		os.Exit(1)
-	}
-
-	auth := &gitssh.PublicKeys{User: "git", Signer: signer}
-	r, err := git.Clone(memory.NewStorage(), memfs.New(), &git.CloneOptions{
-		URL:  args.Url,
-		Auth: auth,
-	})
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	err = r.Fetch(&git.FetchOptions{
-		RefSpecs: []config.RefSpec{"refs/*:refs/*", "HEAD:refs/heads/HEAD"},
-		Depth:    1,
-		Auth:     auth,
-	})
-	if err != nil {
-		log.Fatal(err)
 	}
 
 	wt, err := r.Worktree()
 	if err != nil {
-		log.Fatal(err)
+		log.Printf("failed to get repository worktree of %s, %s", args.Url, err)
+		os.Exit(1)
 	}
-
 	branches, err := r.Branches()
 	if err != nil {
-		log.Fatal(err)
+		log.Printf("failed retrieve branches of repository %s, %s", args.Url, err)
+		os.Exit(1)
 	}
 
-	var result DockerfileFromReferences = make(DockerfileFromReferences, 0)
+	var result = make(DockerfileFromReferences, 0)
 
 	err = branches.ForEach(func(ref *plumbing.Reference) error {
 		if !DesiredBranch(ref, args.Branch) {

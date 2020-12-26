@@ -57,7 +57,7 @@ func (r DockerfileFromReferences) Output(format string, noHeader bool) {
 		encoder := yaml.NewEncoder(os.Stdout)
 		_ = encoder.Encode(r)
 	} else {
-		w := tabwriter.NewWriter(os.Stdout, 1, 8, 0, '\t', tabwriter.TabIndent)
+		w := tabwriter.NewWriter(os.Stdout, 1, 8, 1, '\t', tabwriter.TabIndent)
 		if !noHeader {
 			fmt.Fprintf(w, "%s\t%s\t%s\n", "REFERENCE", "PATH", "BRANCH")
 		}
