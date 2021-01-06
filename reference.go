@@ -5,13 +5,15 @@ import (
 	"fmt"
 	"gopkg.in/yaml.v3"
 	"os"
+	"strings"
 	"text/tabwriter"
 )
 
 type DockerfileFromReference struct {
-	Reference string `json:"reference:omitempty"`
-	Path      string `json:"path,omitempty"`
-	Branch    string `json:"branch,omitempty"`
+	Reference string   `json:"reference:omitempty"`
+	Path      string   `json:"path,omitempty"`
+	Branch    string   `json:"branch,omitempty"`
+	Newer     []string `json:"newer,omitempty"`
 }
 type DockerfileFromReferences []*DockerfileFromReference
 
@@ -59,10 +61,14 @@ func (r DockerfileFromReferences) Output(format string, noHeader bool) {
 	} else {
 		w := tabwriter.NewWriter(os.Stdout, 1, 8, 1, '\t', tabwriter.TabIndent)
 		if !noHeader {
-			fmt.Fprintf(w, "%s\t%s\t%s\n", "REFERENCE", "PATH", "BRANCH")
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", "REFERENCE", "PATH", "BRANCH", "NEWER")
 		}
 		for _, reference := range r {
-			fmt.Fprintf(w, "%s\t%s\t%s\n", reference.Reference, reference.Path, reference.Branch)
+			var newer = "-"
+			if reference.Newer != nil {
+				newer = strings.Join(reference.Newer, ",")
+			}
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", reference.Reference, reference.Path, reference.Branch, newer)
 		}
 		w.Flush()
 	}
