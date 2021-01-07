@@ -10,7 +10,7 @@ import (
 )
 
 type DockerfileFromReference struct {
-	Reference string   `json:"reference:omitempty"`
+	Reference string   `json:"image,omitempty" yaml:"image"`
 	Path      string   `json:"path,omitempty"`
 	Branch    string   `json:"branch,omitempty"`
 	Newer     []string `json:"newer,omitempty"`
@@ -61,7 +61,7 @@ func (r DockerfileFromReferences) Output(format string, noHeader bool) {
 	} else {
 		w := tabwriter.NewWriter(os.Stdout, 1, 8, 1, '\t', tabwriter.TabIndent)
 		if !noHeader {
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", "REFERENCE", "PATH", "BRANCH", "NEWER")
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", "IMAGE", "PATH", "BRANCH", "NEWER")
 		}
 		for _, reference := range r {
 			var newer = "-"
