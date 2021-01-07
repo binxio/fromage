@@ -1,4 +1,4 @@
-module github.com/binxio/git-fromage
+module github.com/binxio/fromage
 
 go 1.15
 
