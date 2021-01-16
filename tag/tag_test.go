@@ -98,7 +98,7 @@ func TestGetNextVersion(t *testing.T) {
 		{"php:7.3-xfpm", false, "php:7.3-xfpm"},
 		{"deadbeef:1.0", true, "deadbeef:1.0"},
 		{"golang:1.12.0", false, "golang:1.12.1"},
-		{"index.docker.io/library/golang:1.12.0", false, "index.docker.io/library/golang:1.12.1"},
+		{"index.docker.io/library/golang:1.12.6", false, "index.docker.io/library/golang:1.12.17"},
 		{"golang:latest", false, "golang:latest"},
 		{"golang:least", false, "golang:least"},
 		{"php:28.1-fpm", false, "php:28.1-fpm"},
