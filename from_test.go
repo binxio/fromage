@@ -70,7 +70,7 @@ FROM builder as runtime
 			t.Fatal(err)
 		}
 		reference, _ := r.(name.Tag)
-		nextRef, _ := tag.GetNextVersion(reference)
+		nextRef, _ := tag.GetNextVersion(reference, nil)
 		result, updated := UpdateFromStatements(test.dockerfile, reference, nextRef, "./Dockerfile", true)
 		if updated != test.updated {
 			t.Fatalf("expected updated to be %v, in %s", test.updated, string(test.dockerfile))
@@ -89,6 +89,23 @@ type updateAlltest struct {
 
 func TestUpdateAllFromStatements(t *testing.T) {
 	var tests = []updateAlltest{
+		{
+			[]byte(`
+FROM golang:1.12.17 as builder #comment
+
+FROM builder as runtime
+
+FROM php:7.2-fpm
+`),
+			true,
+			[]byte(`
+FROM golang:1.13.15 as builder #comment
+
+FROM builder as runtime
+
+FROM php:7.3-fpm
+`),
+		},
 		{
 			[]byte(`
 FROM golang:1.12 as builder #comment
@@ -123,23 +140,7 @@ FROM builder as runtime
 FROM php:7.3-fpm
 `),
 		},
-		{
-			[]byte(`
-FROM golang:1.12.17 as builder #comment
 
-FROM builder as runtime
-
-FROM php:7.2-fpm
-`),
-			true,
-			[]byte(`
-FROM golang:1.13.15 as builder #comment
-
-FROM builder as runtime
-
-FROM php:7.3-fpm
-`),
-		},
 
 		{
 			[]byte(`

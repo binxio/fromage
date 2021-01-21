@@ -133,9 +133,10 @@ func (f *Fromage) OpenRepository() {
 
 	f.workTree, err = f.repository.Worktree()
 	if err != nil {
-		log.Printf("ERRORL failed to get repository worktree of %s, %s", f.Url, err)
+		log.Printf("ERROR: failed to get repository worktree of %s, %s", f.Url, err)
 		os.Exit(1)
 	}
+
 	f.references = make(DockerfileFromReferences, 0)
 
 	for _, branch := range f.Branch {
@@ -213,6 +214,7 @@ func BumpReferences(f *Fromage) error {
 		return err
 	}
 
+
 	content, updated := UpdateAllFromStatements(content, f.dockerfile, f.pin, true)
 	if updated {
 		f.updated = true
@@ -228,8 +230,13 @@ func main() {
 	usage := `fromage - list all container references in Dockerfiles in a git repository
 
 Usage:
+<<<<<<< HEAD
   fromage list [--verbose] [--format=FORMAT] [--no-header] [--only-references]  [--branch=BRANCH ...] URL
   fromage bump [--verbose] [--dry-run] [--pin=LEVEL] --branch=BRANCH URL
+=======
+  fromage list [--format=FORMAT] [--no-header] [--only-references]  [--branch=BRANCH ...] URL
+  fromage bump [--dry-run] --branch=BRANCH URL
+>>>>>>> 3fbe5730ac2a96ebdb8da4591aac7165458c6352
 
 Options:
 --branch=BRANCH     to inspect, defaults to all branches.

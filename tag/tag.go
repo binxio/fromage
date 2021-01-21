@@ -305,8 +305,13 @@ func GetNextVersion(reference name.Tag, pin *Level) (*name.Tag, error) {
 		tagList = tagList.FilterByLevel(tag, *pin)
 	}
 
+
 	if successors := tagList.FindGreaterThan(tag); len(successors) > 0 {
 		nextTag := updateIdentifier(reference, successors[0].Literal)
+		if successors[0].IsPatchLevel() {
+			successors = successors.FilterByLevel(successors[0], MINOR)
+			nextTag = updateIdentifier(reference, successors[len(successors)-1].Literal)
+		}
 		return &nextTag, nil
 	} else {
 		if len(tagList) > 1 {
