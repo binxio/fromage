@@ -214,7 +214,6 @@ func BumpReferences(f *Fromage) error {
 		return err
 	}
 
-
 	content, updated := UpdateAllFromStatements(content, f.dockerfile, f.pin, true)
 	if updated {
 		f.updated = true

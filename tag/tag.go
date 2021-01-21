@@ -315,7 +315,12 @@ func GetNextVersion(reference name.Tag, pin *Level) (*name.Tag, error) {
 		return &nextTag, nil
 	} else {
 		if len(tagList) > 1 {
-			log.Printf("INFO: %s is at latest version", reference.String())
+			if pin != nil {
+				log.Printf("INFO: %s is at latest %s version", reference.String(),
+					strings.ToLower(pin.String()))
+			} else {
+				log.Printf("INFO: %s is at latest version", reference.String())
+			}
 		} else {
 			if len(tagList) == 1 {
 				if tagList[0].Literal != tag.Literal {
