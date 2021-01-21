@@ -54,3 +54,12 @@ the highest level.
 
 The bump will commit the changes to the repository. If it is a 
 remote repository reference, the change will also be pushed.
+
+## bumping
+Bumping a minor version, will bump to the next minor version.  Bumping a patch version, will always bump 
+to the highest patch level available. If the next patch level is a next minor version, it will bump
+the minor version unless `--pin` is specified. pin will only update within the major or minor version level.
+
+# Caveats
+- bumping algoritm may be subject to change
+- The bump will update all container references it finds in all files (on the todo list)
