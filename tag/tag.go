@@ -11,6 +11,31 @@ import (
 	"strings"
 )
 
+type Level int
+
+const (
+	MAJOR Level = 0
+	MINOR       = 1
+	PATCH       = 2
+)
+
+func (l Level) String() string {
+	return [...]string{"MAJOR", "MINOR", "PATH"}[l]
+}
+
+func MakeLevelFromString(s string) (Level, error) {
+	switch strings.ToUpper(s) {
+	case "MAJOR":
+		return MAJOR, nil
+	case "MINOR":
+		return MINOR, nil
+	case "PATCH":
+		return PATCH, nil
+	default:
+		return MAJOR, fmt.Errorf("%s is not a representation of a semantic version level", s)
+	}
+}
+
 type Tag struct {
 	Literal  string
 	Prefix   string
@@ -81,6 +106,25 @@ func MakeTag(tag string) Tag {
 	return result
 }
 
+func (t Tag) IsPatchLevel() bool {
+	return t.Version != nil && len(t.Version) == 3
+}
+
+func HasSameMajorLevel(t, o Tag) bool {
+	return t.Category == o.Category && len(t.Version) >= 1 && len(o.Version) >= 1 &&
+		t.Version[0] == o.Version[0]
+}
+
+func HasSameMinorLevel(t, o Tag) bool {
+	return HasSameMajorLevel(t, o) && len(t.Version) >= 2 && len(o.Version) >= 2 &&
+		t.Version[1] == o.Version[1]
+}
+
+func HasSamePatchLevel(t, o Tag) bool {
+	return HasSameMinorLevel(t, o) && len(t.Version) >= 3 && len(o.Version) >= 3 &&
+		t.Version[2] == o.Version[2]
+}
+
 func (t Tag) String() string {
 	var builder = strings.Builder{}
 	builder.WriteString(t.Prefix)
@@ -149,6 +193,22 @@ func ListAllTags(reference string) ([]Tag, error) {
 	return result, nil
 }
 
+func (l Tags) FilterByLevel(tag Tag, level Level) (result Tags) {
+	m := map[Level]func(Tag, Tag) bool{
+		MAJOR: HasSameMajorLevel,
+		MINOR: HasSameMinorLevel,
+		PATCH: HasSamePatchLevel,
+	}
+
+	result = make(Tags, 0, len(l))
+	for _, t := range l {
+		if m[level](t, tag) {
+			result = append(result, t)
+		}
+	}
+	return result
+}
+
 func (l Tags) FindGreaterThan(tag Tag) Tags {
 	result := make(Tags, 0)
 	for _, t := range l {
@@ -157,6 +217,22 @@ func (l Tags) FindGreaterThan(tag Tag) Tags {
 		}
 	}
 	return result
+}
+
+func (l Tags) FindHighestPatchLevel(tag Tag) *Tag {
+	if !tag.IsPatchLevel() {
+		return nil
+	}
+	result := l.FilterSameMinorVersion(tag)
+	if len(result) == 0 {
+		return nil
+	}
+
+	return &result[len(result)-1]
+}
+
+func (l Tags) FilterSameMinorVersion(tag Tag) Tags {
+	return l.FilterByLevel(tag, MINOR)
 }
 
 func (a Tags) Len() int           { return len(a) }
@@ -204,6 +280,73 @@ func hasImplicitNamespace(repo string, reg name.Registry) bool {
 	return !strings.ContainsRune(repo, '/') && reg.RegistryStr() == name.DefaultRegistry
 }
 
+func updateIdentifier(reference name.Tag, identifier string) (next name.Tag) {
+	next = reference.Tag(identifier)
+	if hasImplicitNamespace(reference.String(), reference.Registry) {
+		parts := strings.Split(reference.String(), ":")
+		r, err := name.ParseReference(fmt.Sprintf("%s:%s", parts[0], next.TagStr()))
+		if err != nil {
+			log.Fatalf("ERROR:  internal program error constructing new container reference")
+		}
+		next, _ = r.(name.Tag)
+	}
+	return next
+}
+
+func GetNextVersion(reference name.Tag, pin *Level) (*name.Tag, error) {
+	tagList, err := GetTagsFromCache(reference)
+	if err != nil {
+		log.Printf("WARNING: %s", err)
+		return &reference, err
+	}
+
+	tag := MakeTag(reference.TagStr())
+	if pin != nil {
+		tagList = tagList.FilterByLevel(tag, *pin)
+	}
+
+	if successors := tagList.FindGreaterThan(tag); len(successors) > 0 {
+		nextTag := updateIdentifier(reference, successors[0].Literal)
+		return &nextTag, nil
+	} else {
+		if len(tagList) > 1 {
+			log.Printf("INFO: %s is at latest version", reference.String())
+		} else {
+			if len(tagList) == 1 {
+				if tagList[0].Literal != tag.Literal {
+					log.Printf("WARNING: only 1 version tag was found for %s: '%s'",
+						reference.String(), tagList[0].Literal)
+				}
+			} else {
+				log.Printf("WARNING: no other version tags where found for %s", reference.String())
+			}
+		}
+	}
+	return &reference, nil
+}
+
+func GetNextVersions(references []name.Reference, within *Level) ([]name.Reference, error) {
+	var errors = make([]error, 0)
+	var result = make([]name.Reference, 0, len(references))
+
+	for _, r := range references {
+		if ref, ok := r.(name.Tag); ok {
+			ref, err := GetNextVersion(ref, within)
+			if err != nil {
+				errors = append(errors, err)
+			}
+			result = append(result, ref)
+		} else {
+			log.Printf("WARNING: cannot get next version of %s, as it is not a tagged reference", r.String())
+		}
+	}
+	if len(errors) > 0 {
+		return result, fmt.Errorf("%v", errors)
+	} else {
+		return result, nil
+	}
+}
+
 func GetAllSuccessorsByString(reference string) ([]Tag, error) {
 	if r, err := name.ParseReference(reference); err == nil {
 		return GetAllSuccessors(r)
@@ -223,67 +366,5 @@ func GetAllSuccessors(reference name.Reference) ([]Tag, error) {
 
 	} else {
 		return []Tag{}, nil
-	}
-}
-
-func GetNextVersion(reference name.Tag) (*name.Tag, error) {
-	successors, err := GetAllSuccessors(reference)
-	if err != nil {
-		log.Printf("WARNING: %s", err)
-		return &reference, err
-	}
-
-	if len(successors) > 0 {
-		nextTag := reference.Tag(successors[0].Literal)
-
-		if hasImplicitNamespace(reference.String(), reference.Registry) {
-			parts := strings.Split(reference.String(), ":")
-			r, err := name.ParseReference(fmt.Sprintf("%s:%s", parts[0], successors[0].Literal))
-			if err != nil {
-				log.Fatalf("ERROR:  internal program error constructing new container reference")
-			}
-			nextTag, _ = r.(name.Tag)
-		}
-
-		return &nextTag, nil
-	} else {
-		tagList, err := GetTagsFromCache(reference)
-		if err == nil {
-			if len(tagList) > 1 {
-				log.Printf("INFO: %s is at latest version", reference.String())
-			} else {
-				if len(tagList) == 1 {
-					if tagList[0].Literal != reference.TagStr() {
-						log.Printf("WARNING: only 1 version tag was found for %s: '%s'",
-							reference.String(), tagList[0].Literal)
-					}
-				} else {
-					log.Printf("WARNING: no other version tags where found for %s", reference.String())
-				}
-			}
-		}
-	}
-	return &reference, nil
-}
-
-func GetNextVersions(references []name.Reference) ([]name.Reference, error) {
-	var errors = make([]error, 0)
-	var result = make([]name.Reference, 0, len(references))
-
-	for _, r := range references {
-		if ref, ok := r.(name.Tag); ok {
-			ref, err := GetNextVersion(ref)
-			if err != nil {
-				errors = append(errors, err)
-			}
-			result = append(result, ref)
-		} else {
-			log.Printf("WARNING: cannot get next version of %s, as it is not a tagged reference", r.String())
-		}
-	}
-	if len(errors) > 0 {
-		return result, fmt.Errorf("%v", errors)
-	} else {
-		return result, nil
 	}
 }

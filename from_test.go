@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/binxio/git-fromage/tag"
+	"github.com/binxio/fromage/tag"
 	"github.com/google/go-containerregistry/pkg/name"
 	"testing"
 )
@@ -36,14 +36,14 @@ func TestUpdateFromStatements(t *testing.T) {
 	var tests = []updateTest{
 		{
 			[]byte(`
-FROM golang@sha256:f0e10b20de190c7cf4ea7ef410e7229d64facdc5d94514a13aa9b58d36fca647 as builder #comment
+FROM golang@sha256:d0e79a9c39cdb3d71cc45fec929d1308d50420b79201467ec602b1b80cc314a8 as builder #comment
 
 FROM builder als runtime
 `),
-			"golang:1.13",
-			true,
+			"golang@sha256:d0e79a9c39cdb3d71cc45fec929d1308d50420b79201467ec602b1b80cc314a8",
+			false,
 			[]byte(`
-FROM golang:1.13 as builder #comment
+FROM golang@sha256:d0e79a9c39cdb3d71cc45fec929d1308d50420b79201467ec602b1b80cc314a8 as builder #comment
 
 FROM builder als runtime
 `),
@@ -54,7 +54,7 @@ FROM golang:1.12 as builder #comment
 
 FROM builder as runtime
 `),
-			"golang:1.13",
+			"golang:1.12",
 			true,
 			[]byte(`
 FROM golang:1.13 as builder #comment
@@ -65,17 +65,18 @@ FROM builder as runtime
 	}
 
 	for _, test := range tests {
-		var reference name.Tag
-		if r, err := name.ParseReference(test.reference); err == nil {
-			reference, _ = r.(name.Tag)
+		r, err := name.ParseReference(test.reference)
+		if err != nil {
+			t.Fatal(err)
 		}
-
-		result, updated := UpdateFromStatements(test.dockerfile, reference, "./Dockerfile", true)
+		reference, _ := r.(name.Tag)
+		nextRef, _ := tag.GetNextVersion(reference)
+		result, updated := UpdateFromStatements(test.dockerfile, reference, nextRef, "./Dockerfile", true)
 		if updated != test.updated {
-			t.Fatalf("expected updated to be %v, was %v", test.updated, updated)
+			t.Fatalf("expected updated to be %v, in %s", test.updated, string(test.dockerfile))
 		}
-		if updated && string(result) != string(test.newDockerfile) {
-			t.Fatalf("update did nod match expected result")
+		if string(result) != string(test.newDockerfile) {
+			t.Fatalf("update did not match expected result")
 		}
 	}
 }
@@ -107,6 +108,41 @@ FROM php:7.3-fpm
 		},
 		{
 			[]byte(`
+FROM golang:1.12.0 as builder #comment
+
+FROM builder as runtime
+
+FROM php:7.2-fpm
+`),
+			true,
+			[]byte(`
+FROM golang:1.12.17 as builder #comment
+
+FROM builder as runtime
+
+FROM php:7.3-fpm
+`),
+		},
+		{
+			[]byte(`
+FROM golang:1.12.17 as builder #comment
+
+FROM builder as runtime
+
+FROM php:7.2-fpm
+`),
+			true,
+			[]byte(`
+FROM golang:1.13.15 as builder #comment
+
+FROM builder as runtime
+
+FROM php:7.3-fpm
+`),
+		},
+
+		{
+			[]byte(`
 FROM golang:latest as builder #comment
 
 FROM builder as runtime
@@ -124,18 +160,10 @@ FROM php:latest
 		},
 	}
 	for _, test := range tests {
-		var froms = ExtractFromStatements(test.dockerfile)
-		var references = make([]name.Reference, 0, len(froms))
-		for _, from := range froms {
-			ref, _ := name.ParseReference(from)
-			references = append(references, ref)
-		}
-		references, _ = tag.GetNextVersions(references)
-		newDockerfile, updated := UpdateAllFromStatements(test.dockerfile,
-			references, "./Dockerfile", true)
+		newDockerfile, updated := UpdateAllFromStatements(test.dockerfile, "./Dockerfile", nil, true)
 
 		if test.updated != updated {
-			t.Fatalf("expected updated to be %v", test.updated)
+			t.Fatalf("expected updated to be %v in %s", test.updated, string(test.dockerfile))
 		}
 
 		if string(test.newDockerfile) != string(newDockerfile) {

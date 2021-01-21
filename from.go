@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"github.com/binxio/fromage/tag"
 	"github.com/google/go-containerregistry/pkg/name"
 	"log"
 	"regexp"
@@ -49,7 +50,7 @@ func ExtractFromStatements(content []byte) []string {
 	return result
 }
 
-func UpdateFromStatements(content []byte, reference name.Reference, filename string, verbose bool) ([]byte, bool) {
+func UpdateFromStatements(content []byte, from name.Reference, to name.Reference, filename string, verbose bool) ([]byte, bool) {
 	previous := 0
 	updated := false
 	result := bytes.Buffer{}
@@ -68,27 +69,23 @@ func UpdateFromStatements(content []byte, reference name.Reference, filename str
 						s, filename, err)
 				}
 
-				if ref.Context().Name() == reference.Context().Name() {
-					if ref.Identifier() != reference.Identifier() {
+				if ref.Context().Name() == from.Context().Name() {
+					if ref.Identifier() == from.Identifier() {
+
 						updated = true
 						if verbose {
-							log.Printf("INFO: updating reference %s to %s in %s", ref, reference, filename)
+							log.Printf("INFO: updating reference %s to %s in %s", ref, to, filename)
 						}
 
 						result.Write(content[previous:start])
-						result.Write([]byte(reference.String()))
+						result.Write([]byte(to.String()))
 						previous = end
-					} else {
-						if verbose {
-							log.Printf("INFO: %s already up-to-date in %s", ref, filename)
-						}
 					}
 				}
 			default:
 				// ignore
 			}
 		}
-
 	}
 	if previous < len(content) {
 		result.Write(content[previous:len(content)])
@@ -97,15 +94,26 @@ func UpdateFromStatements(content []byte, reference name.Reference, filename str
 	return result.Bytes(), updated
 }
 
-func UpdateAllFromStatements(content []byte, references []name.Reference, filename string, verbose bool) ([]byte, bool) {
-	var result bool
+func UpdateAllFromStatements(content []byte, filename string, pin *tag.Level, verbose bool) ([]byte, bool) {
+	result := false
+	refs := ExtractFromStatements(content)
+	var references = make([]name.Reference, 0, len(refs))
+	for _, refString := range refs {
+		ref, err := name.ParseReference(refString)
+		if err != nil {
+			log.Fatalf("failed to parse %s into a reference, %v", refString, err)
+		}
+		references = append(references, ref)
+	}
 
-	for _, ref := range references {
-		if c, updated := UpdateFromStatements(content, ref, filename, verbose); updated {
+	bumper := MakeBumper(references, pin)
+	for _, r := range bumper.bumpOrder {
+		from, _ := name.ParseReference(r)
+		to, _ := name.ParseReference(bumper.bumpReferences[r])
+		if c, updated := UpdateFromStatements(content, from, to, filename, true); updated {
 			content = c
 			result = true
 		}
 	}
-
 	return content, result
 }

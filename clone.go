@@ -88,7 +88,8 @@ func getPassword(repositoryUrl string) transport.AuthMethod {
 	return &githttp.BasicAuth{Username: user, Password: password}
 }
 
-func Clone(url string) (*git.Repository, error) {
+func Clone(url string, progress io.Writer) (r *git.Repository, err error) {
+	var plainOpen bool
 	var auth transport.AuthMethod
 	if MatchesScheme(url) {
 		if os.Getenv("GIT_ASKPASS") != "" || getCredentialHelper(url) != "" {
@@ -107,34 +108,43 @@ func Clone(url string) (*git.Repository, error) {
 
 		sshKey, err := ioutil.ReadFile(keyFile)
 		if err != nil {
-			return nil, fmt.Errorf("failed to read key file '%s', %s", keyFile, err)
+			return nil, fmt.Errorf("ERROR: failed to read key file '%s', %s", keyFile, err)
 		}
 
 		signer, err := ssh.ParsePrivateKey(sshKey)
 		if err != nil {
-			return nil, fmt.Errorf("failed to read private key from '%s', %s", keyFile, err)
+			return nil, fmt.Errorf("ERROR: failed to read private key from '%s', %s", keyFile, err)
 		}
 
 		auth = &gitssh.PublicKeys{User: user, Signer: signer}
 
 	} else {
-		// ok no authentication required.
+		plainOpen = true
 	}
-	r, err := git.Clone(memory.NewStorage(), memfs.New(), &git.CloneOptions{
-		URL:  url,
-		Auth: auth,
-	})
 
-	if err != nil {
-		return nil, err
-	}
-	err = r.Fetch(&git.FetchOptions{
-		RefSpecs: []config.RefSpec{"refs/*:refs/*"},
-		Depth:    1,
-		Auth:     auth,
-	})
-	if err != nil && err != git.NoErrAlreadyUpToDate {
-		return nil, fmt.Errorf("failed to fetch all branches from %s, %s", url, err)
+	if plainOpen {
+		r, err = git.PlainOpenWithOptions(url, &git.PlainOpenOptions{DetectDotGit: true})
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		r, err = git.Clone(memory.NewStorage(), memfs.New(), &git.CloneOptions{
+			URL:      url,
+			Progress: progress,
+			Auth:     auth,
+		})
+
+		if err != nil {
+			return nil, err
+		}
+		err = r.Fetch(&git.FetchOptions{
+			RefSpecs: []config.RefSpec{"refs/*:refs/*"},
+			Depth:    1,
+			Auth:     auth,
+		})
+		if err != nil && err != git.NoErrAlreadyUpToDate {
+			return nil, fmt.Errorf("ERROR: failed to fetch all branches from %s, %s", url, err)
+		}
 	}
 
 	return r, nil
