@@ -305,11 +305,16 @@ func (f *Fromage) CommitAndPush() error {
 
 	if !f.DryRun {
 		progress := os.Stderr
-		if f.Verbose {
+		if !f.Verbose {
 			progress = nil
 		}
 		log.Printf("INFO: pushing changes to %s", f.Url)
-		return f.repository.Push(&git.PushOptions{Progress: progress})
+
+		auth, _, err := GetAuth(f.Url)
+		if err != nil {
+			return err
+		}
+		return f.repository.Push(&git.PushOptions{Auth: auth, Progress: progress})
 	} else {
 		log.Printf("INFO: changes would be pushed to %s", f.Url)
 	}

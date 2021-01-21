@@ -88,9 +88,8 @@ func getPassword(repositoryUrl string) transport.AuthMethod {
 	return &githttp.BasicAuth{Username: user, Password: password}
 }
 
-func Clone(url string, progress io.Writer) (r *git.Repository, err error) {
-	var plainOpen bool
-	var auth transport.AuthMethod
+func GetAuth(url string) (auth transport.AuthMethod, plainOpen bool, err error) {
+
 	if MatchesScheme(url) {
 		if os.Getenv("GIT_ASKPASS") != "" || getCredentialHelper(url) != "" {
 			auth = getPassword(url)
@@ -108,18 +107,29 @@ func Clone(url string, progress io.Writer) (r *git.Repository, err error) {
 
 		sshKey, err := ioutil.ReadFile(keyFile)
 		if err != nil {
-			return nil, fmt.Errorf("ERROR: failed to read key file '%s', %s", keyFile, err)
+			return nil, false, fmt.Errorf("ERROR: failed to read key file '%s', %s", keyFile, err)
 		}
 
 		signer, err := ssh.ParsePrivateKey(sshKey)
 		if err != nil {
-			return nil, fmt.Errorf("ERROR: failed to read private key from '%s', %s", keyFile, err)
+			return nil, false, fmt.Errorf("ERROR: failed to read private key from '%s', %s", keyFile, err)
 		}
 
 		auth = &gitssh.PublicKeys{User: user, Signer: signer}
 
 	} else {
+		auth = nil
 		plainOpen = true
+	}
+	return
+}
+
+func Clone(url string, progress io.Writer) (r *git.Repository, err error) {
+	var plainOpen bool
+	var auth transport.AuthMethod
+
+	if auth, plainOpen, err = GetAuth(url); err != nil {
+		return nil, err
 	}
 
 	if plainOpen {
