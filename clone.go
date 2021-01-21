@@ -93,8 +93,6 @@ func GetAuth(url string) (auth transport.AuthMethod, plainOpen bool, err error) 
 	if MatchesScheme(url) {
 		if os.Getenv("GIT_ASKPASS") != "" || getCredentialHelper(url) != "" {
 			auth = getPassword(url)
-		} else {
-			log.Printf("INFO: no credential helper defined")
 		}
 	} else if MatchesScpLike(url) {
 		user, host, _, _ := FindScpLikeComponents(url)
@@ -142,6 +140,7 @@ func Clone(url string, progress io.Writer) (r *git.Repository, err error) {
 			URL:      url,
 			Progress: progress,
 			Auth:     auth,
+			Depth:    2,
 		})
 
 		if err != nil {
