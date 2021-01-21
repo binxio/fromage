@@ -227,16 +227,11 @@ func BumpReferences(f *Fromage) error {
 }
 
 func main() {
-	usage := `fromage - list all container references in Dockerfiles in a git repository
+	usage := `fromage - list and bumps all container references in Dockerfiles in a git repository
 
 Usage:
-<<<<<<< HEAD
   fromage list [--verbose] [--format=FORMAT] [--no-header] [--only-references]  [--branch=BRANCH ...] URL
   fromage bump [--verbose] [--dry-run] [--pin=LEVEL] --branch=BRANCH URL
-=======
-  fromage list [--format=FORMAT] [--no-header] [--only-references]  [--branch=BRANCH ...] URL
-  fromage bump [--dry-run] --branch=BRANCH URL
->>>>>>> 3fbe5730ac2a96ebdb8da4591aac7165458c6352
 
 Options:
 --branch=BRANCH     to inspect, defaults to all branches.
