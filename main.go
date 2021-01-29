@@ -1,12 +1,14 @@
 package main
 
 import (
+	"bytes"
 	"github.com/binxio/fromage/tag"
 	"github.com/docopt/docopt-go"
 	"gopkg.in/src-d/go-git.v4"
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/object"
 	"gopkg.in/src-d/go-git.v4/plumbing/storer"
+	"io"
 	"io/ioutil"
 	"log"
 	"os"
@@ -38,7 +40,7 @@ func (f *Fromage) IsLocalRepository() bool {
 	return !MatchesScheme(f.Url) && !MatchesScpLike(f.Url)
 }
 
-func FindDockerfiles(wt *git.Worktree, filename string) ([]string, error) {
+func FindDockerfiles(wt *git.Worktree, filename string, ref *plumbing.Reference) ([]string, error) {
 	result := make([]string, 0)
 	file, err := wt.Filesystem.Stat(filename)
 	if err != nil {
@@ -55,7 +57,7 @@ func FindDockerfiles(wt *git.Worktree, filename string) ([]string, error) {
 			if filename == "/" {
 				fullPath = file.Name()
 			}
-			found, err := FindDockerfiles(wt, fullPath)
+			found, err := FindDockerfiles(wt, fullPath, ref)
 			if err == nil {
 				result = append(result, found...)
 			} else {
@@ -123,7 +125,7 @@ func (f *Fromage) OpenRepository() {
 	if f.Verbose {
 		f.repository, err = Clone(f.Url, os.Stderr)
 	} else {
-		f.repository, err = Clone(f.Url, nil)
+		f.repository, err = Clone(f.Url, &bytes.Buffer{})
 	}
 
 	if err != nil {
@@ -169,7 +171,15 @@ func (f *Fromage) ForEachDockerfile(m func(f *Fromage) error) error {
 			return nil
 		}
 
-		dockerfiles, err := FindDockerfiles(f.workTree, "/")
+		err := f.workTree.Checkout(&git.CheckoutOptions{
+			Branch: ref.Name(),
+			Force:  false,
+		})
+		if err != nil {
+			return err
+		}
+
+		dockerfiles, err := FindDockerfiles(f.workTree, "/", ref)
 		if err != nil {
 			return err
 		}
@@ -304,9 +314,9 @@ func (f *Fromage) CommitAndPush() error {
 	}
 
 	if !f.DryRun {
-		progress := os.Stderr
+		var progress io.Writer = os.Stderr
 		if !f.Verbose {
-			progress = nil
+			progress = &bytes.Buffer{}
 		}
 		log.Printf("INFO: pushing changes to %s", f.Url)
 
