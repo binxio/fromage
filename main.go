@@ -176,7 +176,7 @@ func (f *Fromage) ForEachDockerfile(m func(f *Fromage) error) error {
 		}
 
 		if f.Verbose {
-			log.Printf("head at %s, checking out %s\n", ref.Name().Short())
+			log.Printf("checking out %s\n", ref.Name().Short())
 		}
 
 		err := f.workTree.Checkout(&git.CheckoutOptions{

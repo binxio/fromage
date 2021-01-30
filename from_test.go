@@ -70,7 +70,7 @@ FROM builder as runtime
 			t.Fatal(err)
 		}
 		reference, _ := r.(name.Tag)
-		nextRef, _ := tag.GetNextVersion(reference, nil)
+		nextRef, _ := tag.GetNextVersion(reference, nil, false)
 		result, updated := UpdateFromStatements(test.dockerfile, reference, nextRef, "./Dockerfile", true)
 		if updated != test.updated {
 			t.Fatalf("expected updated to be %v, in %s", test.updated, string(test.dockerfile))
@@ -99,7 +99,7 @@ FROM php:7.2-fpm
 `),
 			true,
 			[]byte(`
-FROM golang:1.13.15 as builder #comment
+FROM golang:1.13.0 as builder #comment
 
 FROM builder as runtime
 
@@ -133,7 +133,7 @@ FROM php:7.2-fpm
 `),
 			true,
 			[]byte(`
-FROM golang:1.12.17 as builder #comment
+FROM golang:1.12.1 as builder #comment
 
 FROM builder as runtime
 
@@ -160,7 +160,7 @@ FROM php:latest
 		},
 	}
 	for _, test := range tests {
-		newDockerfile, updated := UpdateAllFromStatements(test.dockerfile, "./Dockerfile", nil, true)
+		newDockerfile, updated := UpdateAllFromStatements(test.dockerfile, "./Dockerfile", nil, false, true)
 
 		if test.updated != updated {
 			t.Fatalf("expected updated to be %v in %s", test.updated, string(test.dockerfile))
