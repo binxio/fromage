@@ -1,20 +1,23 @@
 # Name
-  fromage - list and bump container references in Dockerfiles in git repositories
+  fromage - list, checks and bump container references in Dockerfiles in git repositories
 
 # Usage
 
 ```
   fromage list [--verbose] [--format=FORMAT] [--no-header] [--only-references]  [--branch=BRANCH ...] URL
+  fromage check [--verbose] [--format=FORMAT] [--no-header] [--only-references]  [--branch=BRANCH ...] [--pin=LEVEL] URL
   fromage bump [--verbose] [--dry-run] [--pin=LEVEL] --branch=BRANCH URL
 ```
 # Options
 
 ```
-  --branch=BRANCH     to update or to inspect default is all branches.
-  --format=FORMAT     to print: text, json or yaml [default: text].
-  --no-header         do not print header if output type is text.
-  --only-references   output only container image references.
-  --pin=LEVEL         pins the MAJOR or MINOR version level in the bump
+Options:
+    --branch=BRANCH     to inspect, defaults to all branches.
+    --format=FORMAT     to print: text, json or yaml [default: text].
+    --no-header         do not print header if output type is text.
+    --only-references   output only container image references.
+    --pin=LEVEL         pins the MAJOR or MINOR version level
+    --latest            bump to the latest version available
 ```
 
 # Description
@@ -37,8 +40,20 @@ gcr.io/google-appengine/debian10:latest deploy/kritis-signer/Dockerfile         
 The columns show the container reference, the filename and branch in which it was found and available newer
 versions.
 
+## checking out-of-date references
+to check whether there are newer references available, type:  
+```sh
+./fromage check --branch master --verbose https://github.com/binxio/kritis
+IMAGE                                   PATH                                            BRANCH  NEWER
+golang:1.12                             helm-hooks/Dockerfile                           master  1.13,1.14,1.15
+golang:1.12                             deploy/Dockerfile                               master  1.13,1.14,1.15
+exit code 1
+```
+This will only list the references which are out of date. If found, it exits with code 1.
 
-To bump the references to the next file, type:
+
+## bumping container references
+To bump the references to the next level, type:
 
 ```
 ./fromage bump --branch master --verbose git@github.com:binxio/kritis.git
@@ -55,11 +70,6 @@ the highest level.
 The bump will commit the changes to the repository. If it is a 
 remote repository reference, the change will also be pushed.
 
-## bumping
-Bumping a minor version, will bump to the next minor version.  Bumping a patch version, will always bump 
-to the highest patch level available. If the next patch level is a next minor version, it will bump
-the minor version unless `--pin` is specified. pin will only update within the major or minor version level.
-
 # Caveats
-- bumping algoritm may be subject to change
 - The bump will update all container references it finds in all files (on the todo list)
+- When running on a local repository, fromage checkouts the branches in the workspace. 

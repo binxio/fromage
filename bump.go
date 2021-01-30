@@ -41,13 +41,13 @@ func (b *Bumper) DetermineBumpOrder() {
 	}
 }
 
-func MakeBumper(references []name.Reference, pin *tag.Level) Bumper {
+func MakeBumper(references []name.Reference, pin *tag.Level, latest bool) Bumper {
 	var result = Bumper{make(map[string]string, len(references)),
 		make([]string, 0, len(references)), false}
 
 	for _, r := range references {
 		if tagRef, ok := r.(name.Tag); ok {
-			if nextTag, err := tag.GetNextVersion(tagRef, pin); err == nil {
+			if nextTag, err := tag.GetNextVersion(tagRef, pin, latest); err == nil {
 				result.bumpReferences[r.String()] = nextTag.String()
 			} else {
 				// skip references which do not have a next version

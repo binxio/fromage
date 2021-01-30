@@ -293,7 +293,7 @@ func updateIdentifier(reference name.Tag, identifier string) (next name.Tag) {
 	return next
 }
 
-func GetNextVersion(reference name.Tag, pin *Level) (*name.Tag, error) {
+func GetNextVersion(reference name.Tag, pin *Level, latest bool) (*name.Tag, error) {
 	tagList, err := GetTagsFromCache(reference)
 	if err != nil {
 		log.Printf("WARNING: %s", err)
@@ -305,13 +305,12 @@ func GetNextVersion(reference name.Tag, pin *Level) (*name.Tag, error) {
 		tagList = tagList.FilterByLevel(tag, *pin)
 	}
 
-
 	if successors := tagList.FindGreaterThan(tag); len(successors) > 0 {
 		nextTag := updateIdentifier(reference, successors[0].Literal)
-		if successors[0].IsPatchLevel() {
-			successors = successors.FilterByLevel(successors[0], MINOR)
+		if latest {
 			nextTag = updateIdentifier(reference, successors[len(successors)-1].Literal)
 		}
+
 		return &nextTag, nil
 	} else {
 		if len(tagList) > 1 {
@@ -335,13 +334,13 @@ func GetNextVersion(reference name.Tag, pin *Level) (*name.Tag, error) {
 	return &reference, nil
 }
 
-func GetNextVersions(references []name.Reference, within *Level) ([]name.Reference, error) {
+func GetNextVersions(references []name.Reference, within *Level, latest bool) ([]name.Reference, error) {
 	var errors = make([]error, 0)
 	var result = make([]name.Reference, 0, len(references))
 
 	for _, r := range references {
 		if ref, ok := r.(name.Tag); ok {
-			ref, err := GetNextVersion(ref, within)
+			ref, err := GetNextVersion(ref, within, latest)
 			if err != nil {
 				errors = append(errors, err)
 			}
@@ -357,21 +356,26 @@ func GetNextVersions(references []name.Reference, within *Level) ([]name.Referen
 	}
 }
 
-func GetAllSuccessorsByString(reference string) ([]Tag, error) {
+func GetAllSuccessorsByString(reference string, pin *Level) ([]Tag, error) {
 	if r, err := name.ParseReference(reference); err == nil {
-		return GetAllSuccessors(r)
+		return GetAllSuccessors(r, pin)
 	} else {
 		return []Tag{}, err
 	}
 }
 
-func GetAllSuccessors(reference name.Reference) ([]Tag, error) {
+func GetAllSuccessors(reference name.Reference, pin *Level) ([]Tag, error) {
 	if r, ok := reference.(name.Tag); ok {
 		tagList, err := GetTagsFromCache(r)
 		if err != nil {
 			return nil, err
 		}
+
 		tag := MakeTag(r.TagStr())
+		if pin != nil {
+			tagList = tagList.FilterByLevel(tag, *pin)
+		}
+
 		return tagList.FindGreaterThan(tag), nil
 
 	} else {

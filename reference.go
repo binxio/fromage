@@ -73,3 +73,14 @@ func (r DockerfileFromReferences) Output(format string, noHeader bool) {
 		w.Flush()
 	}
 }
+
+func (r DockerfileFromReferences) FilterOutOfDate() DockerfileFromReferences {
+	result := make(DockerfileFromReferences, 0, len(r))
+
+	for _, ref := range r {
+		if len(ref.Newer) > 0 {
+			result = append(result, ref)
+		}
+	}
+	return result
+}

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"github.com/binxio/fromage/tag"
 	"github.com/docopt/docopt-go"
 	"gopkg.in/src-d/go-git.v4"
@@ -17,6 +18,7 @@ import (
 )
 
 type Fromage struct {
+	Check          bool
 	List           bool
 	Bump           bool
 	Format         string
@@ -27,6 +29,7 @@ type Fromage struct {
 	DryRun         bool
 	Verbose        bool
 	Pin            string
+	Latest         bool
 	repository     *git.Repository
 	workTree       *git.Worktree
 	currentBranch  *plumbing.Reference
@@ -122,6 +125,7 @@ func DesiredBranch(reference *plumbing.Reference, branches []string) bool {
 
 func (f *Fromage) OpenRepository() {
 	var err error
+
 	if f.Verbose {
 		f.repository, err = Clone(f.Url, os.Stderr)
 	} else {
@@ -171,12 +175,16 @@ func (f *Fromage) ForEachDockerfile(m func(f *Fromage) error) error {
 			return nil
 		}
 
+		if f.Verbose {
+			log.Printf("head at %s, checking out %s\n", ref.Name().Short())
+		}
+
 		err := f.workTree.Checkout(&git.CheckoutOptions{
 			Branch: ref.Name(),
 			Force:  false,
 		})
 		if err != nil {
-			return err
+			return fmt.Errorf("ERROR: checkout of %s failed, %s", ref.Name().Short(), err)
 		}
 
 		dockerfiles, err := FindDockerfiles(f.workTree, "/", ref)
@@ -200,7 +208,7 @@ func ListAllReferences(f *Fromage) error {
 	for _, reference := range references {
 
 		var newer []string
-		if successors, err := tag.GetAllSuccessorsByString(reference); err == nil {
+		if successors, err := tag.GetAllSuccessorsByString(reference, f.pin); err == nil {
 			newer = make([]string, 0, len(successors))
 			for _, v := range successors {
 				newer = append(newer, v.String())
@@ -224,7 +232,7 @@ func BumpReferences(f *Fromage) error {
 		return err
 	}
 
-	content, updated := UpdateAllFromStatements(content, f.dockerfile, f.pin, true)
+	content, updated := UpdateAllFromStatements(content, f.dockerfile, f.pin, f.Latest, f.Verbose)
 	if updated {
 		f.updated = true
 		if !f.DryRun {
@@ -236,18 +244,30 @@ func BumpReferences(f *Fromage) error {
 }
 
 func main() {
-	usage := `fromage - list and bumps all container references in Dockerfiles in a git repository
+	usage := `fromage - checks, list and bumps all container references in Dockerfiles in a git repository
 
 Usage:
-  fromage list [--verbose] [--format=FORMAT] [--no-header] [--only-references]  [--branch=BRANCH ...] URL
-  fromage bump [--verbose] [--dry-run] [--pin=LEVEL] --branch=BRANCH URL
+  fromage list  [--verbose] [--format=FORMAT] [--no-header] [--only-references]  [--branch=BRANCH ...] URL
+  fromage check [--verbose] [--format=FORMAT] [--no-header] [--only-references]  [--branch=BRANCH ...] [--pin=LEVEL] URL
+  fromage bump  [--verbose] [--dry-run] [--pin=LEVEL] [--latest] --branch=BRANCH URL
 
 Options:
 --branch=BRANCH     to inspect, defaults to all branches.
 --format=FORMAT     to print: text, json or yaml [default: text].
 --no-header         do not print header if output type is text.
 --only-references   output only container image references.
---pin=LEVEL         pins the MAJOR or MINOR version level in the bump
+--pin=LEVEL         pins the MAJOR or MINOR version level
+--latest            bump to the latest version available
+
+Description:
+list will iterate over all dockerfiles in all branches in the repository and print out all container
+image references and list newer versions if available.
+
+check will do the same, and if there are newer versions available print the out of date container
+image references and exit with 1.
+
+bump will update the container images references on the specified branch and commit/push the changes
+back to the repository.
 `
 	var fromage Fromage
 
@@ -268,9 +288,13 @@ Options:
 
 	fromage.OpenRepository()
 
-	if fromage.List {
+	if fromage.List || fromage.Check {
 		if err := fromage.ForEachDockerfile(ListAllReferences); err != nil {
 			log.Fatal(err)
+		}
+
+		if fromage.Check {
+			fromage.references = fromage.references.FilterOutOfDate()
 		}
 
 		if fromage.OnlyReferences {
@@ -278,14 +302,19 @@ Options:
 		} else {
 			fromage.references.Output(fromage.Format, fromage.NoHeader)
 		}
-	}
-	if fromage.Bump {
+
+		if fromage.Check && len(fromage.references) > 0 {
+			os.Exit(1)
+		}
+	} else if fromage.Bump {
 		if err := fromage.ForEachDockerfile(BumpReferences); err != nil {
 			log.Fatal(err)
 		}
 		if err := fromage.CommitAndPush(); err != nil {
 			log.Fatal(err)
 		}
+	} else {
+		log.Fatalf("I don't know what to do")
 	}
 }
 
