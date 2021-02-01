@@ -123,13 +123,17 @@ func DesiredBranch(reference *plumbing.Reference, branches []string) bool {
 	return len(branches) == 0
 }
 
+func (f *Fromage) ReadOnly() bool {
+	return f.Check || f.List || f.DryRun
+}
+
 func (f *Fromage) OpenRepository() {
 	var err error
 
 	if f.Verbose {
-		f.repository, err = Clone(f.Url, os.Stderr)
+		f.repository, err = Clone(f.Url, os.Stderr, f.ReadOnly())
 	} else {
-		f.repository, err = Clone(f.Url, &bytes.Buffer{})
+		f.repository, err = Clone(f.Url, &bytes.Buffer{}, f.ReadOnly())
 	}
 
 	if err != nil {

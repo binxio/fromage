@@ -122,7 +122,7 @@ func GetAuth(url string) (auth transport.AuthMethod, plainOpen bool, err error) 
 	return
 }
 
-func Clone(url string, progress io.Writer) (r *git.Repository, err error) {
+func Clone(url string, progress io.Writer, readOnly bool) (r *git.Repository, err error) {
 	var plainOpen bool
 	var auth transport.AuthMethod
 
@@ -131,9 +131,17 @@ func Clone(url string, progress io.Writer) (r *git.Repository, err error) {
 	}
 
 	if plainOpen {
-		r, err = git.PlainOpenWithOptions(url, &git.PlainOpenOptions{DetectDotGit: true})
-		if err != nil {
-			return nil, err
+		if !readOnly {
+			r, err = git.PlainOpenWithOptions(url, &git.PlainOpenOptions{DetectDotGit: true})
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			r, err = git.Clone(memory.NewStorage(), memfs.New(), &git.CloneOptions{
+				URL:      url,
+				Progress: progress,
+				Depth:    2,
+			})
 		}
 	} else {
 		r, err = git.Clone(memory.NewStorage(), memfs.New(), &git.CloneOptions{

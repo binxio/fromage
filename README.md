@@ -71,5 +71,4 @@ The bump will commit the changes to the repository. If it is a
 remote repository reference, the change will also be pushed.
 
 # Caveats
-- The bump will update all container references it finds in all files (on the todo list)
-- When running on a local repository, fromage checkouts the branches in the workspace. 
+- The bump will update all container references it finds in all files
