@@ -70,5 +70,7 @@ the highest level.
 The bump will commit the changes to the repository. If it is a 
 remote repository reference, the change will also be pushed.
 
+Read more at [How to keep your Dockerfile container image references up-to-date](https://binx.io/blog/2021/01/30/how-to-keep-your-dockerfile-container-image-references-up-to-date/)
+
 # Caveats
 - The bump will update all container references it finds in all files
