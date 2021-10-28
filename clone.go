@@ -1,9 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	sshconfig "github.com/kevinburke/ssh_config"
-	"github.com/mitchellh/go-homedir"
 	"golang.org/x/crypto/ssh"
 	"gopkg.in/src-d/go-billy.v4/memfs"
 	"gopkg.in/src-d/go-git.v4"
@@ -88,32 +88,85 @@ func getPassword(repositoryUrl string) transport.AuthMethod {
 	return &githttp.BasicAuth{Username: user, Password: password}
 }
 
+func identityFileAuthentication(user string, host string) (auth transport.AuthMethod, err error) {
+
+	var keyFile = sshconfig.Get(host, "IdentityFile")
+
+	if user == "" {
+		user = sshconfig.Get(host, "User")
+	}
+
+	if _, err = os.Stat(keyFile); os.IsNotExist(err) {
+		return nil, nil
+	}
+
+	key, err := ioutil.ReadFile(keyFile)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read %s, %s", keyFile, err)
+	}
+
+	signer, parseError := ssh.ParsePrivateKey(key)
+	if parseError == nil {
+		return &gitssh.PublicKeys{User: user, Signer: signer}, nil
+	}
+
+	if missingErr, ok := parseError.(*ssh.PassphraseMissingError); ok {
+		return sshAgentAuthentication(user, host, keyFile, missingErr.PublicKey)
+	}
+
+	if publicKey, _, _, _, publicKeyParseError := ssh.ParseAuthorizedKey(key); publicKeyParseError == nil {
+		return sshAgentAuthentication(user, host, keyFile, publicKey)
+	}
+
+	return nil, fmt.Errorf("ERROR: failed to read private key from '%s', %s", keyFile, parseError)
+}
+
+func sshAgentAuthentication(user, host, keyFile string, key ssh.PublicKey) (auth transport.AuthMethod, err error) {
+	if user == "" {
+		user = sshconfig.Get(host, "User")
+	}
+
+	sshAuthSocket := os.Getenv("SSH_AUTH_SOCK")
+	if sshAuthSocket == "" {
+		return nil, nil
+	}
+
+	publicKeys, err := gitssh.NewSSHAgentAuth(user)
+	if err != nil {
+		return nil, fmt.Errorf("ERROR: failed to connect ssh agent, %s", err)
+	}
+
+	signers, err := publicKeys.Callback()
+	if err != nil {
+		return nil, fmt.Errorf("ERROR: failed to obtain keys from ssh agent, %s", err)
+	}
+	for _, signer := range signers {
+		if bytes.Compare(signer.PublicKey().Marshal(), key.Marshal()) == 0 {
+			return &gitssh.PublicKeys{User: user, Signer: signer}, nil
+		}
+	}
+	if auth == nil && err == nil {
+		log.Printf("WARNING: key for identity file %s not available in ssh agent.", keyFile)
+	}
+
+	return nil, nil
+}
+
 func GetAuth(url string) (auth transport.AuthMethod, plainOpen bool, err error) {
 
 	if MatchesScheme(url) {
 		if os.Getenv("GIT_ASKPASS") != "" || getCredentialHelper(url) != "" {
 			auth = getPassword(url)
 		}
-	} else if MatchesScpLike(url) {
+		return auth, false, nil
+	}
+
+	if MatchesScpLike(url) {
 		user, host, _, _ := FindScpLikeComponents(url)
 
-		if user == "" {
-			user = sshconfig.Get(host, "User")
+		if auth, err = identityFileAuthentication(user, host); err != nil {
+			return
 		}
-		keyFile := sshconfig.Get(host, "IdentityFile")
-		keyFile, _ = homedir.Expand(keyFile)
-
-		sshKey, err := ioutil.ReadFile(keyFile)
-		if err != nil {
-			return nil, false, fmt.Errorf("ERROR: failed to read key file '%s', %s", keyFile, err)
-		}
-
-		signer, err := ssh.ParsePrivateKey(sshKey)
-		if err != nil {
-			return nil, false, fmt.Errorf("ERROR: failed to read private key from '%s', %s", keyFile, err)
-		}
-
-		auth = &gitssh.PublicKeys{User: user, Signer: signer}
 
 	} else {
 		auth = nil
