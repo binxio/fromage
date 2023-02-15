@@ -251,41 +251,56 @@ func BumpReferences(f *Fromage) error {
 
 	return nil
 }
-func MoveImageReferences(f *Fromage) error {
+
+func moveImageReferences(content []byte, filename string, verbose bool, from, to string) ([]byte, bool, error) {
 	updated := false
-
-	content, err := ReadFile(f.workTree, f.dockerfile)
-	if err != nil {
-		return err
-	}
-
 	refs := ExtractFromStatements(content)
 	for _, refString := range refs {
 		ref, err := name.ParseReference(refString)
 		fullRef := ref.Name()
 
 		if err != nil {
-			log.Fatalf("failed to parse %s into a reference, %v", refString, err)
+			return nil, false, err
 		}
 
-		if !strings.HasPrefix(fullRef, f.From) && len(fullRef) > len(f.From) {
+		if !strings.HasPrefix(fullRef, from) && len(fullRef) > len(from) {
 			continue
 		}
 
-		if delimiter := fullRef[len(f.From)]; delimiter != ':' && delimiter != '/' {
+		if delimiter := fullRef[len(from)]; delimiter != ':' && delimiter != '/' && delimiter != '@' {
 			continue
 		}
 
-		newRefString := f.To + fullRef[len(f.From):]
+		newRefString := to + fullRef[len(from):]
+		if to == "index.docker.io/library" {
+			newRefString = fullRef[len(from)+1:]
+		}
 		newRef, err := name.ParseReference(newRefString)
 		if err != nil {
-			log.Fatalf("failed to parse %s into a reference, %v", newRefString, err)
+			return nil, false, err
 		}
 
-		content, updated = UpdateFromStatements(content, ref, newRef, f.dockerfile, f.Verbose)
-		if updated {
-			f.updated = true
+		if !RepositoryExists(newRef, verbose) {
+			return nil, false, fmt.Errorf("ERROR: %s is not a valid image reference", newRef)
 		}
+
+		ok := false
+		if content, ok = UpdateFromStatements(content, ref, newRef, filename, verbose); ok {
+			updated = true
+		}
+	}
+	return content, updated, nil
+}
+
+func MoveImageReferences(f *Fromage) error {
+	content, err := ReadFile(f.workTree, f.dockerfile)
+	if err != nil {
+		return err
+	}
+
+	content, f.updated, err = moveImageReferences(content, f.dockerfile, f.Verbose, f.From, f.To)
+	if err != nil {
+		log.Fatalf("%s", err)
 	}
 
 	if f.updated {

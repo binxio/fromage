@@ -53,6 +53,7 @@ var (
 	tagCategoryCache             = map[string]TagCategories{}
 	gitDescribeSuffixRegExp      = regexp.MustCompile(`(?m)^-((?P<order>[0-9]+)-g)?(?P<sha>[0-9a-f]{6,})(?P<dirty>-dirty)?$`)
 	gitDescribeOrderSubExprIndex = findStringIndex(gitDescribeSuffixRegExp.SubexpNames(), "order")
+	tagListCache                 = map[string][]string{}
 )
 
 func findStringIndex(a []string, item string) int {

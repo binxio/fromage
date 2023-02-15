@@ -4,20 +4,23 @@
 # Usage
 
 ```
-  fromage list [--verbose] [--format=FORMAT] [--no-header] [--only-references]  [--branch=BRANCH ...] URL
+  fromage list  [--verbose] [--format=FORMAT] [--no-header] [--only-references]  [--branch=BRANCH ...] URL
   fromage check [--verbose] [--format=FORMAT] [--no-header] [--only-references]  [--branch=BRANCH ...] [--pin=LEVEL] URL
-  fromage bump [--verbose] [--dry-run] [--pin=LEVEL] --branch=BRANCH URL
+  fromage bump  [--verbose] [--dry-run] [--pin=LEVEL] [--latest] --branch=BRANCH URL
+  fromage move  [--verbose] [--dry-run] --from=FROM_REPOSITORY --to=TO_REPOSITORY --branch=BRANCH URL
 ```
-# Options
 
+# Options
 ```
-Options:
-    --branch=BRANCH     to inspect, defaults to all branches.
-    --format=FORMAT     to print: text, json or yaml [default: text].
-    --no-header         do not print header if output type is text.
-    --only-references   output only container image references.
-    --pin=LEVEL         pins the MAJOR or MINOR version level
-    --latest            bump to the latest version available
+--branch=BRANCH        to inspect, defaults to all branches.
+--format=FORMAT        to print: text, json or yaml [default: text].
+--no-header            do not print header if output type is text.
+--only-references      output only container image references.
+--pin=LEVEL            pins the MAJOR or MINOR version level
+--latest               bump to the latest version available
+--from=FROM_REPOSITORY from repository context
+--to=TO_REPOSITORY     to repository context
+
 ```
 
 # Description
@@ -71,6 +74,21 @@ The bump will commit the changes to the repository. If it is a
 remote repository reference, the change will also be pushed.
 
 Read more at [How to keep your Dockerfile container image references up-to-date](https://binx.io/blog/2021/01/30/how-to-keep-your-dockerfile-container-image-references-up-to-date/)
+
+## moving container registry
+
+If you need to move your container registry images from for instance docker hub to AWS Public ECR registry, type:
+
+```
+$ fromage move --verbose --from index.docker.io/library --to public.aws.ecr/docker/library --branch master git@github.com:binxio/kritis.git
+2023/02/15 16:02:43 INFO: updating reference ubuntu:trusty to public.aws.ecr/docker/library/ubuntu:trusty in vendor/golang.org/x/net/http2/Dockerfile
+2023/02/15 16:02:43 INFO: updating reference golang:1.13 to public.aws.ecr/docker/library/golang:1.13 in deploy/Dockerfile
+2023/02/15 16:02:43 INFO: updating reference golang:1.13 to public.aws.ecr/docker/library/golang:1.13 in helm-hooks/Dockerfile
+2023/02/15 16:02:43 INFO: updating reference golang:1.13 to public.aws.ecr/docker/library/golang:1.13 in helm-hooks/Dockerfile
+2023/02/15 16:02:43 INFO: moved references from index.docker.io/library to public.aws.ecr/docker/library
+2023/02/15 16:02:43 INFO: changes committed with 1234ef
+2023/02/15 16:02:43 INFO: pushing changes to git@github.com:binxio/kritis.git
+``` 
 
 # Caveats
 - The bump will update all container references it finds in all files
