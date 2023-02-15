@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/binxio/fromage/tag"
 	"github.com/docopt/docopt-go"
+	"github.com/google/go-containerregistry/pkg/name"
 	"gopkg.in/src-d/go-git.v4"
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/object"
@@ -14,6 +15,7 @@ import (
 	"log"
 	"os"
 	"path"
+	"strings"
 	"time"
 )
 
@@ -21,6 +23,7 @@ type Fromage struct {
 	Check          bool
 	List           bool
 	Bump           bool
+	Move           bool
 	Format         string
 	OnlyReferences bool
 	NoHeader       bool
@@ -30,13 +33,15 @@ type Fromage struct {
 	Verbose        bool
 	Pin            string
 	Latest         bool
-	repository     *git.Repository
-	workTree       *git.Worktree
-	currentBranch  *plumbing.Reference
-	dockerfile     string
-	references     DockerfileFromReferences
-	pin            *tag.Level
-	updated        bool
+	From, To       string
+
+	repository    *git.Repository
+	workTree      *git.Worktree
+	currentBranch *plumbing.Reference
+	dockerfile    string
+	references    DockerfileFromReferences
+	pin           *tag.Level
+	updated       bool
 }
 
 func (f *Fromage) IsLocalRepository() bool {
@@ -246,6 +251,51 @@ func BumpReferences(f *Fromage) error {
 
 	return nil
 }
+func MoveImageReferences(f *Fromage) error {
+	updated := false
+
+	content, err := ReadFile(f.workTree, f.dockerfile)
+	if err != nil {
+		return err
+	}
+
+	refs := ExtractFromStatements(content)
+	for _, refString := range refs {
+		ref, err := name.ParseReference(refString)
+		fullRef := ref.Name()
+
+		if err != nil {
+			log.Fatalf("failed to parse %s into a reference, %v", refString, err)
+		}
+
+		if !strings.HasPrefix(fullRef, f.From) && len(fullRef) > len(f.From) {
+			continue
+		}
+
+		if delimiter := fullRef[len(f.From)]; delimiter != ':' && delimiter != '/' {
+			continue
+		}
+
+		newRefString := f.To + fullRef[len(f.From):]
+		newRef, err := name.ParseReference(newRefString)
+		if err != nil {
+			log.Fatalf("failed to parse %s into a reference, %v", newRefString, err)
+		}
+
+		content, updated = UpdateFromStatements(content, ref, newRef, f.dockerfile, f.Verbose)
+		if updated {
+			f.updated = true
+		}
+	}
+
+	if f.updated {
+		if !f.DryRun {
+			return WriteFile(f.workTree, f.dockerfile, content)
+		}
+	}
+
+	return nil
+}
 
 func main() {
 	usage := `fromage - checks, list and bumps all container references in Dockerfiles in a git repository
@@ -254,14 +304,17 @@ Usage:
   fromage list  [--verbose] [--format=FORMAT] [--no-header] [--only-references]  [--branch=BRANCH ...] URL
   fromage check [--verbose] [--format=FORMAT] [--no-header] [--only-references]  [--branch=BRANCH ...] [--pin=LEVEL] URL
   fromage bump  [--verbose] [--dry-run] [--pin=LEVEL] [--latest] --branch=BRANCH URL
+  fromage move  [--verbose] [--dry-run] --from=FROM_REPOSITORY --to=TO_REPOSITORY --branch=BRANCH URL
 
 Options:
---branch=BRANCH     to inspect, defaults to all branches.
---format=FORMAT     to print: text, json or yaml [default: text].
---no-header         do not print header if output type is text.
---only-references   output only container image references.
---pin=LEVEL         pins the MAJOR or MINOR version level
---latest            bump to the latest version available
+--branch=BRANCH        to inspect, defaults to all branches.
+--format=FORMAT        to print: text, json or yaml [default: text].
+--no-header            do not print header if output type is text.
+--only-references      output only container image references.
+--pin=LEVEL            pins the MAJOR or MINOR version level
+--latest               bump to the latest version available
+--from=FROM_REPOSITORY from repository context
+--to=TO_REPOSITORY     to repository context
 
 Description:
 list will iterate over all dockerfiles in all branches in the repository and print out all container
@@ -272,6 +325,9 @@ image references and exit with 1.
 
 bump will update the container images references on the specified branch and commit/push the changes
 back to the repository.
+
+move will move the container image reference on the specified branch from one registry to another. The
+changes are committed/pushed back to the git repository.
 `
 	var fromage Fromage
 
@@ -314,7 +370,24 @@ back to the repository.
 		if err := fromage.ForEachDockerfile(BumpReferences); err != nil {
 			log.Fatal(err)
 		}
-		if err := fromage.CommitAndPush(); err != nil {
+		msg := "container image references bumped"
+		if fromage.pin != nil {
+			msg = msg + " pinned on " + strings.ToLower(fromage.pin.String()) + " level"
+		}
+		if err := fromage.CommitAndPush(msg); err != nil {
+			log.Fatal(err)
+		}
+	} else if fromage.Move {
+		if fromage.From == "" || fromage.To == "" {
+			log.Fatal("both --from and --to are required to move an image reference")
+		}
+		if strings.ContainsAny(fromage.From, "@:") || strings.ContainsAny(fromage.To, "@:") {
+			log.Fatal("the --from and --to image references should not contain an tag or digest")
+		}
+		if err := fromage.ForEachDockerfile(MoveImageReferences); err != nil {
+			log.Fatal(err)
+		}
+		if err := fromage.CommitAndPush(fmt.Sprintf("moved references from %s to %s", fromage.From, fromage.To)); err != nil {
 			log.Fatal(err)
 		}
 	} else {
@@ -322,12 +395,13 @@ back to the repository.
 	}
 }
 
-func (f *Fromage) CommitAndPush() error {
+func (f *Fromage) CommitAndPush(msg string) error {
 	if !f.updated {
 		return nil
 	}
+	log.Printf("INFO: %s", msg)
 	if !f.DryRun {
-		hash, err := f.workTree.Commit("you were fromaged", &git.CommitOptions{
+		hash, err := f.workTree.Commit(msg, &git.CommitOptions{
 			Author: &object.Signature{
 				Name:  "fromage",
 				Email: "fromage@binx.io",
