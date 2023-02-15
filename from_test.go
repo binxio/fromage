@@ -158,6 +158,25 @@ FROM builder as runtime
 FROM php:latest
 `),
 		},
+		{
+			[]byte(`
+# update ordered to start with highest version
+FROM golang:1.12
+
+FROM golang:1.13
+
+FROM golang:1.14
+`),
+			true,
+			[]byte(`
+# update ordered to start with highest version
+FROM golang:1.13
+
+FROM golang:1.14
+
+FROM golang:1.15
+`),
+		},
 	}
 	for _, test := range tests {
 		newDockerfile, updated := UpdateAllFromStatements(test.dockerfile, "./Dockerfile", nil, false, true)
